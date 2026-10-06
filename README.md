@@ -8,7 +8,7 @@ there are no accounts, no ads and no internet access.
 ## Installing it
 
 1. On your Android phone, open the
-   [latest build](https://github.com/Akrishna87/Akrishna87/releases/tag/daybook-latest)
+   [latest build](https://github.com/Akrishna87/daybook/releases/tag/daybook-latest)
    and tap **Daybook.apk** to download it.
 2. Open the downloaded file. Android will ask you to allow installing apps
    from your browser (or Files app). Allow it, then tap **Install**.
@@ -90,5 +90,5 @@ Kotlin and Jetpack Compose with Material 3, and no libraries beyond AndroidX.
   searches, and switches to the dark theme. Screenshots from that run are attached to
   each release.
 
-Builds are made by the [Daybook APK workflow](../.github/workflows/daybook-apk.yml) on
-every push that touches `daybook-android/`.
+Builds are made by the [Daybook APK workflow](.github/workflows/daybook-apk.yml) on
+every push to this repo.
