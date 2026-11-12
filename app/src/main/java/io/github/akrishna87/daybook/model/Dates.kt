@@ -94,6 +94,69 @@ object Dates {
         return next
     }
 
+    /**
+     * The next date a repeating task comes round after it's completed, or null when that would be
+     * after its end date (so the series is finished).
+     */
+    fun nextOccurrence(task: Task, today: LocalDate): LocalDate? {
+        val due = task.due ?: return null
+        if (task.repeat == Repeat.NONE) return null
+        val next = nextDue(due, task.repeat, today)
+        val end = task.repeatEnd
+        return if (end != null && next.isAfter(end)) null else next
+    }
+
+    /** Which week of a run [day] falls in, counting the week that starts on [start] as week 1. Null before the start. */
+    fun weekNumber(start: LocalDate, day: LocalDate): Int? {
+        val days = ChronoUnit.DAYS.between(start, day)
+        return if (days < 0) null else (days / 7).toInt() + 1
+    }
+
+    /** How many weeks a run from [start] to [end] spans (a partial last week counts). */
+    fun totalWeeks(start: LocalDate, end: LocalDate): Int = weekNumber(start, end) ?: 0
+
+    /**
+     * "Week 2 of 6" (or "Week 2" without an end date) for a repeating task with a start date, at its
+     * due date. Completed copies of an occurrence keep the week they were done in.
+     */
+    fun weekLabel(task: Task): String? {
+        if (task.repeat == Repeat.NONE && task.seriesId == null) return null
+        val start = task.repeatStart ?: return null
+        val day = task.due ?: return null
+        val week = weekNumber(start, day) ?: return null
+        val end = task.repeatEnd
+        return if (end != null && !end.isBefore(start)) "Week $week of ${totalWeeks(start, end)}" else "Week $week"
+    }
+
+    /** "Starts 9 Nov · Ends 20 Dec" style summary of a repeating task's run, or null if it has neither. */
+    fun runLabel(task: Task, today: LocalDate, locale: Locale = Locale.getDefault()): String? {
+        val parts = listOfNotNull(
+            task.repeatStart?.let { "Starts ${dayLabel(it, today, locale)}" },
+            task.repeatEnd?.let { "Ends ${dayLabel(it, today, locale)}" },
+        )
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+    }
+
+    /**
+     * A heading for a week in Upcoming, numbered from the current week: "Week 1 · This week · 9–15 Nov",
+     * "Week 2 · Next week · 16–22 Nov", then "Week 3 · 23–29 Nov".
+     */
+    fun weekHeading(weekStartDay: LocalDate, thisWeek: LocalDate, locale: Locale = Locale.getDefault()): String {
+        val n = (ChronoUnit.DAYS.between(thisWeek, weekStartDay) / 7).toInt() + 1
+        val end = weekStartDay.plusDays(6)
+        val range = if (weekStartDay.month == end.month) {
+            "${weekStartDay.dayOfMonth}–${DateTimeFormatter.ofPattern("d MMM", locale).format(end)}"
+        } else {
+            "${DateTimeFormatter.ofPattern("d MMM", locale).format(weekStartDay)} – ${DateTimeFormatter.ofPattern("d MMM", locale).format(end)}"
+        }
+        val name = when (n) {
+            1 -> "This week · "
+            2 -> "Next week · "
+            else -> ""
+        }
+        return "Week $n · $name$range"
+    }
+
     private fun step(day: LocalDate, repeat: Repeat): LocalDate = when (repeat) {
         Repeat.NONE -> day
         Repeat.DAILY -> day.plusDays(1)

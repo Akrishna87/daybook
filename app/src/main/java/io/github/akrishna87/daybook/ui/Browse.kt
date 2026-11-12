@@ -200,12 +200,15 @@ fun SearchPage(data: Data) {
                 if (query.text.isNotEmpty()) {
                     IconButton(onClick = { query = TextFieldValue("") }, Modifier.semantics { contentDescription = "Clear search" }) { Icon(Icons.Rounded.Close, null) }
                 }
+                MicButton("Voice search", "Search tasks and notes") { said ->
+                    query = TextFieldValue(said, androidx.compose.ui.text.TextRange(said.length))
+                }
             }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 32.dp)) {
             if (q.isEmpty()) {
-                item { EmptyState(Icons.Rounded.Search, "Search everything", "Find tasks by title, description or @label, and notes by title, text or #tag.") }
+                item { EmptyState(Icons.Rounded.Search, "Search everything", "Find tasks by title, description or @label, and notes by title, text or #tag. Tap the microphone to search by voice.") }
             } else if (tasks.isEmpty() && notes.isEmpty()) {
                 item { EmptyState(Icons.Rounded.Search, "No results", "Nothing matches “$q”.") }
             }

@@ -67,6 +67,8 @@ jobs:
 
   publish:
     needs: [build, smoke-test]
+    # Only builds of main replace the "daybook-latest" release; other branches keep their APK as an artifact.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write

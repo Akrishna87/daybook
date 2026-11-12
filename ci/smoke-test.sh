@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Runs inside the Android emulator job: adds tasks with Quick Add, completes one, adds a sub-task
-# and a project, writes a note with a checklist, searches, and switches to the dark theme.
+# and a project, writes a note with a checklist, searches (with the voice search button there),
+# records a voice note, completes a repeating task with an end date and checks it lands in
+# Completed with its week number, and switches to the dark theme.
 # Usage: smoke-test.sh <apk> <output dir>
 set -euo pipefail
 
@@ -67,6 +69,7 @@ adb wait-for-device
 adb install -r "$APK"
 adb shell settings put global hide_error_dialogs 1 || true
 adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS || true
+adb shell pm grant "$PKG" android.permission.RECORD_AUDIO || true
 adb logcat -c
 
 close_panel() { hide_keyboard; adb shell input keyevent KEYCODE_BACK; sleep 1; }
@@ -197,10 +200,67 @@ adb shell input text "report"
 sleep 1
 hide_keyboard
 wait_for search 'text="Write report"' 10 "search didn't find the task"
+grep -q 'content-desc="Voice search"' "$OUT/search.xml" || fail "search has no voice search button"
 shot 11-search
 adb shell input keyevent KEYCODE_BACK
 sleep 1
-echo "PASS: search"
+echo "PASS: search, with voice search"
+
+echo "--- Voice notes"
+dump before-voice
+tap before-voice "New voice note"
+wait_for voice-rec 'content-desc="Save recording"' 15 "recording a voice note didn't start"
+sleep 3
+dump voice-rec-2
+shot 13-recording
+tap voice-rec-2 "Save recording"
+wait_for voice-saved 'text="Voice note 1"' 10 "the voice note wasn't saved into the note"
+grep -q 'content-desc="Play voice note 1"' "$OUT/voice-saved.xml" || fail "the voice note has no play button"
+tap voice-saved "Play voice note 1"
+sleep 1
+shot 14-voice-note
+hide_keyboard
+adb shell input keyevent KEYCODE_BACK
+sleep 1
+echo "PASS: voice notes"
+
+echo "--- Repeating task with an end date"
+dump before-repeat
+tap before-repeat "Today" last
+wait_for today-repeat 'content-desc="Add task"' 10 "Today has no Add task button"
+tap today-repeat "Add task"
+wait_for repeat-quick 'content-desc="Task name"' 10 "Quick Add didn't open"
+sleep 1
+adb shell input text "Gym%severy%sday%sfor%s3%sweeks"
+sleep 1
+dump repeat-typed
+grep -q 'content-desc="Every day"' "$OUT/repeat-typed.xml" || fail "Quick Add didn't read every day"
+grep -q 'content-desc="Ends ' "$OUT/repeat-typed.xml" || fail "Quick Add didn't read for 3 weeks as an end date"
+shot 15-repeat-quick-add
+adb shell input keyevent KEYCODE_ENTER
+sleep 1
+close_panel
+wait_for repeat-today 'text="Gym"' 10 "the repeating task isn't on Today"
+grep -q 'text="Week 1 of 3"' "$OUT/repeat-today.xml" || fail "the repeating task doesn't say which week it's in"
+shot 16-repeat-today
+tap repeat-today "Complete Gym"
+sleep 1
+dump repeat-done
+grep -q 'text="Completed. Next: Tomorrow"' "$OUT/repeat-done.xml" || fail "completing the repeating task didn't move it to tomorrow"
+grep -q 'Completed today' "$OUT/repeat-done.xml" || fail "Today has no Completed today section"
+tap repeat-done "Upcoming" last
+wait_for repeat-upcoming 'Week 1 · This week' 10 "Upcoming doesn't number its weeks"
+shot 17-upcoming-weeks
+tap repeat-upcoming "Browse" last
+wait_for repeat-browse 'text="Completed"' 10 "Browse has no Completed"
+tap repeat-browse "Completed"
+wait_for repeat-completed 'text="Gym"' 10 "the completed occurrence isn't in Completed"
+grep -q 'text="Week 1 of 3"' "$OUT/repeat-completed.xml" || fail "the completed occurrence lost its week"
+grep -q 'text="Buy milk"' "$OUT/repeat-completed.xml" || fail "Buy milk isn't in Completed"
+shot 18-completed
+adb shell input keyevent KEYCODE_BACK
+sleep 1
+echo "PASS: repeating tasks with an end date, week numbers and Completed"
 
 echo "--- Dark theme"
 dump before-settings

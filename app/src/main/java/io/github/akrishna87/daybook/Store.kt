@@ -11,6 +11,7 @@ import io.github.akrishna87.daybook.model.Project
 import io.github.akrishna87.daybook.model.Repeat
 import io.github.akrishna87.daybook.model.Settings
 import io.github.akrishna87.daybook.model.Task
+import io.github.akrishna87.daybook.model.newId
 import io.github.akrishna87.daybook.widget.TodayWidget
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -85,25 +86,50 @@ object Store {
     /** The task and its subtasks, as they are now, for Undo. */
     fun taskFamily(id: String): List<Task> = state.value.tasks.filter { it.id == id || it.parentId == id }
 
+    /** What completing a task did, so the snackbar can say so and Undo can put it back. */
+    data class Completion(
+        /** The repeating task's next date, when it moved on. */
+        val next: LocalDate? = null,
+        /** The completed copy kept in Completed for one occurrence of a repeating task. */
+        val historyId: String? = null,
+        /** A repeating task that reached its end date and is now finished for good. */
+        val seriesEnded: Boolean = false,
+    )
+
     /**
-     * Completes a task and its subtasks. A repeating task with a date moves to its next date
-     * instead, and that date is returned.
+     * Completes a task and its subtasks, so it shows in Completed. A repeating task with a date
+     * leaves a completed copy of this occurrence in Completed and moves to its next date instead,
+     * unless that would be after its end date, in which case the whole series is completed.
      */
-    fun completeTask(id: String, today: LocalDate = LocalDate.now()): LocalDate? {
-        var nextDate: LocalDate? = null
+    fun completeTask(id: String, today: LocalDate = LocalDate.now()): Completion {
+        var result = Completion()
         update { d ->
             val t = d.task(id) ?: return@update d
             val now = System.currentTimeMillis()
             val due = t.due
             if (t.repeat != Repeat.NONE && due != null) {
-                val next = Dates.nextDue(due, t.repeat, today)
-                nextDate = next
-                d.copy(tasks = d.tasks.map { if (it.id == id) it.copy(due = next) else it })
+                val next = Dates.nextOccurrence(t, today)
+                if (next == null) {
+                    result = Completion(seriesEnded = true)
+                    d.copy(tasks = d.tasks.map { if (it.id == id || (it.parentId == id && !it.done)) it.copy(done = true, doneAt = now) else it })
+                } else {
+                    val history = t.copy(
+                        id = newId(),
+                        repeat = Repeat.NONE,
+                        reminder = false,
+                        seriesId = t.id,
+                        done = true,
+                        doneAt = now,
+                        createdAt = now,
+                    )
+                    result = Completion(next = next, historyId = history.id)
+                    d.copy(tasks = d.tasks.map { if (it.id == id) it.copy(due = next) else it } + history)
+                }
             } else {
                 d.copy(tasks = d.tasks.map { if (it.id == id || (it.parentId == id && !it.done)) it.copy(done = true, doneAt = now) else it })
             }
         }
-        return nextDate
+        return result
     }
 
     fun uncompleteTask(id: String) = update { d ->
@@ -163,12 +189,31 @@ object Store {
 
     /** Deletes a note for good; its tasks stay but lose the link. */
     fun deleteNoteForever(id: String) = update { d ->
+        d.note(id)?.let { Voice.deleteFiles(app, it.recordings) }
         d.copy(notes = d.notes.filter { it.id != id }, tasks = d.tasks.map { if (it.noteId == id) it.copy(noteId = null) else it })
     }
 
     fun emptyTrash() = update { d ->
-        val gone = d.notes.filter { it.trashed }.map { it.id }.toSet()
+        val trashed = d.notes.filter { it.trashed }
+        trashed.forEach { Voice.deleteFiles(app, it.recordings) }
+        val gone = trashed.map { it.id }.toSet()
         d.copy(notes = d.notes.filter { !it.trashed }, tasks = d.tasks.map { if (it.noteId != null && it.noteId in gone) it.copy(noteId = null) else it })
+    }
+
+    /** Adds a voice note to a note (making the note if it's still a draft). */
+    fun addRecording(note: Note, recording: io.github.akrishna87.daybook.model.Recording) = update { d ->
+        val base = d.note(note.id) ?: note
+        val next = base.copy(recordings = base.recordings + recording, updatedAt = System.currentTimeMillis())
+        val i = d.notes.indexOfFirst { it.id == note.id }
+        d.copy(notes = if (i < 0) d.notes + next else d.notes.toMutableList().also { it[i] = next })
+    }
+
+    fun deleteRecording(noteId: String, recordingId: String) = update { d ->
+        val n = d.note(noteId) ?: return@update d
+        val r = n.recordings.firstOrNull { it.id == recordingId } ?: return@update d
+        Voice.deleteFiles(app, listOf(r))
+        val next = n.copy(recordings = n.recordings - r, updatedAt = System.currentTimeMillis())
+        d.copy(notes = if (next.isBlank) d.notes.filter { it.id != noteId } else d.notes.map { if (it.id == noteId) next else it })
     }
 
     fun renameTag(old: String, new: String) = update { d ->

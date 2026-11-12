@@ -13,6 +13,8 @@ data class ParsedTask(
     val projectId: String? = null,
     val labels: List<String> = emptyList(),
     val repeat: Repeat? = null,
+    /** The last day of a repeating task's run: "for 6 weeks", "until dec 31". */
+    val repeatEnd: LocalDate? = null,
     /** The character ranges that were recognised, so the text field can highlight them. */
     val matches: List<IntRange> = emptyList(),
 )
@@ -24,7 +26,8 @@ data class ParsedTask(
  * Dates: today, tomorrow (tmr), weekdays (monday or mon), next week, next friday, this weekend,
  * in 3 days, in 2 weeks, 5 jan, jan 5th, 2026-10-05. Times: 9am, 9:30pm, 21:00, at 5, noon, tonight.
  * Priority: p1 to p4. Project: #Name (an existing project; spaces in its name are left out).
- * Labels: @anything. Repeats: daily, every day, every weekday, every week, every monday, every month, every year.
+ * Labels: @anything. Repeats: daily, every day, every weekday, every week, every monday, every month, every year,
+ * with an end: for 6 weeks, for 10 days, for 3 months, until dec 31, till friday.
  */
 object QuickAdd {
     private val months = mapOf(
@@ -66,12 +69,50 @@ object QuickAdd {
             for (k in from until from + count) used[k] = true
         }
 
+        /** A date starting at word [i], and how many words it used. */
+        fun dateAt(i: Int): Pair<LocalDate, Int>? {
+            val w = word(i) ?: return null
+            val next = word(i + 1)
+            return when {
+                w == "today" || w == "tod" -> today to 1
+                w == "tomorrow" || w == "tmr" || w == "tmrw" -> today.plusDays(1) to 1
+                weekdays.containsKey(w) -> onOrAfter(today, weekdays.getValue(w)) to 1
+                w == "next" && next == "week" -> Dates.startOfWeek(today, weekStart).plusWeeks(1) to 2
+                w == "next" && next == "month" -> today.plusMonths(1).withDayOfMonth(1) to 2
+                w == "next" && next != null && weekdays.containsKey(next) ->
+                    onOrAfter(Dates.startOfWeek(today, weekStart).plusWeeks(1), weekdays.getValue(next)) to 2
+                w == "weekend" -> onOrAfter(today, DayOfWeek.SATURDAY) to 1
+                w == "this" && next == "weekend" -> onOrAfter(today, DayOfWeek.SATURDAY) to 2
+                w == "in" && next != null -> {
+                    val amount = if (next == "a" || next == "an") 1 else next.toIntOrNull()
+                    val unit = word(i + 2)?.removeSuffix("s")
+                    if (amount == null || amount !in 1..999) null else when (unit) {
+                        "day" -> today.plusDays(amount.toLong()) to 3
+                        "week" -> today.plusWeeks(amount.toLong()) to 3
+                        "month" -> today.plusMonths(amount.toLong()) to 3
+                        "year" -> today.plusYears(amount.toLong()) to 3
+                        else -> null
+                    }
+                }
+                Regex("\\d{4}-\\d{2}-\\d{2}").matches(w) -> runCatching { LocalDate.parse(w) }.getOrNull()?.let { it to 1 }
+                months.containsKey(w) && next != null && dayNumber.matches(next) ->
+                    monthDay(months.getValue(w), dayNumber.matchEntire(next)!!.groupValues[1].toInt(), word(i + 2), today)?.let { it.first to 2 + it.second }
+                dayNumber.matches(w) && next != null && months.containsKey(next) ->
+                    monthDay(months.getValue(next), dayNumber.matchEntire(w)!!.groupValues[1].toInt(), word(i + 2), today)?.let { it.first to 2 + it.second }
+                else -> null
+            }
+        }
+
         var due: LocalDate? = null
         var time: LocalTime? = null
         var priority: Int? = null
         var projectId: String? = null
         val labels = mutableListOf<String>()
         var repeat: Repeat? = null
+        var until: LocalDate? = null
+        // "for 6 weeks": the length of the run, turned into an end date once the start is known.
+        var runLength: Pair<Int, String>? = null
+        val endWords = BooleanArray(toks.size)
 
         var i = 0
         while (i < toks.size) {
@@ -93,6 +134,21 @@ object QuickAdd {
                 val label = raw.substring(1)
                 if (labels.none { it.equals(label, true) }) labels += label
                 n = 1
+            }
+
+            if (n == 0 && until == null && runLength == null) {
+                val next = word(i + 1)
+                if ((w == "until" || w == "till" || w == "til") && next != null) {
+                    dateAt(i + 1)?.let { (d, used) -> until = d; n = 1 + used }
+                } else if (w == "for" && next != null) {
+                    val amount = next.toIntOrNull()
+                    val unit = word(i + 2)?.removeSuffix("s")
+                    if (amount != null && amount in 1..999 && unit in setOf("day", "week", "month")) {
+                        runLength = amount to unit!!
+                        n = 3
+                    }
+                }
+                for (k in i until i + n) endWords[k] = true
             }
 
             if (n == 0 && repeat == null) {
@@ -129,58 +185,12 @@ object QuickAdd {
             }
 
             if (n == 0 && due == null) {
-                val next = word(i + 1)
-                when {
-                    w == "today" || w == "tod" -> { due = today; n = 1 }
-                    w == "tomorrow" || w == "tmr" || w == "tmrw" -> { due = today.plusDays(1); n = 1 }
-                    w == "tonight" -> {
-                        due = today
-                        if (time == null) time = LocalTime.of(19, 0)
-                        n = 1
-                    }
-                    weekdays.containsKey(w) -> { due = onOrAfter(today, weekdays.getValue(w)); n = 1 }
-                    w == "next" && next == "week" -> { due = Dates.startOfWeek(today, weekStart).plusWeeks(1); n = 2 }
-                    w == "next" && next == "month" -> { due = today.plusMonths(1).withDayOfMonth(1); n = 2 }
-                    w == "next" && next != null && weekdays.containsKey(next) -> {
-                        due = onOrAfter(Dates.startOfWeek(today, weekStart).plusWeeks(1), weekdays.getValue(next))
-                        n = 2
-                    }
-                    w == "weekend" -> { due = onOrAfter(today, DayOfWeek.SATURDAY); n = 1 }
-                    w == "this" && next == "weekend" -> { due = onOrAfter(today, DayOfWeek.SATURDAY); n = 2 }
-                    w == "in" && next != null -> {
-                        val amount = if (next == "a" || next == "an") 1 else next.toIntOrNull()
-                        val unit = word(i + 2)?.removeSuffix("s")
-                        if (amount != null && amount in 1..999) {
-                            val d = when (unit) {
-                                "day" -> today.plusDays(amount.toLong())
-                                "week" -> today.plusWeeks(amount.toLong())
-                                "month" -> today.plusMonths(amount.toLong())
-                                "year" -> today.plusYears(amount.toLong())
-                                else -> null
-                            }
-                            if (d != null) {
-                                due = d
-                                n = 3
-                            }
-                        }
-                    }
-                    Regex("\\d{4}-\\d{2}-\\d{2}").matches(w) -> {
-                        runCatching { LocalDate.parse(w) }.getOrNull()?.let { due = it; n = 1 }
-                    }
-                    months.containsKey(w) && next != null && dayNumber.matches(next) -> {
-                        val d = monthDay(months.getValue(w), dayNumber.matchEntire(next)!!.groupValues[1].toInt(), word(i + 2), today)
-                        if (d != null) {
-                            due = d.first
-                            n = 2 + d.second
-                        }
-                    }
-                    dayNumber.matches(w) && next != null && months.containsKey(next) -> {
-                        val d = monthDay(months.getValue(next), dayNumber.matchEntire(w)!!.groupValues[1].toInt(), word(i + 2), today)
-                        if (d != null) {
-                            due = d.first
-                            n = 2 + d.second
-                        }
-                    }
+                if (w == "tonight") {
+                    due = today
+                    if (time == null) time = LocalTime.of(19, 0)
+                    n = 1
+                } else {
+                    dateAt(i)?.let { (d, used) -> due = d; n = used }
                 }
             }
 
@@ -220,6 +230,21 @@ object QuickAdd {
             due = if (repeat == Repeat.WEEKDAYS) onOrAfter(today, DayOfWeek.MONDAY).takeIf { today.dayOfWeek.value >= 6 } ?: today else today
         }
 
+        // An end only means something for a repeating task; otherwise the words stay in the title.
+        var repeatEnd: LocalDate? = null
+        if (repeat != null) {
+            val start = due ?: today
+            repeatEnd = until ?: runLength?.let { (amount, unit) ->
+                when (unit) {
+                    "day" -> start.plusDays(amount - 1L)
+                    "week" -> start.plusWeeks(amount.toLong()).minusDays(1)
+                    else -> start.plusMonths(amount.toLong()).minusDays(1)
+                }
+            }
+        } else if (until != null || runLength != null) {
+            for (k in toks.indices) if (endWords[k]) used[k] = false
+        }
+
         return ParsedTask(
             title = toks.filterIndexed { k, _ -> !used[k] }.joinToString(" ") { input.substring(it.range) }.trim(),
             due = due,
@@ -228,6 +253,7 @@ object QuickAdd {
             projectId = projectId,
             labels = labels,
             repeat = repeat,
+            repeatEnd = repeatEnd,
             matches = toks.filterIndexed { k, _ -> used[k] }.map { it.range },
         )
     }

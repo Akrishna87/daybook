@@ -1,5 +1,6 @@
 package io.github.akrishna87.daybook.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,8 +22,11 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.CalendarToday
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.EventBusy
 import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Label
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Notifications
@@ -99,6 +103,8 @@ fun TaskDetailPage(id: String, data: Data) {
     var pickingDate by remember { mutableStateOf(false) }
     var pickingTime by remember { mutableStateOf(false) }
     var repeatMenu by remember { mutableStateOf(false) }
+    var pickingStart by remember { mutableStateOf(false) }
+    var pickingEnd by remember { mutableStateOf(false) }
     var priorityMenu by remember { mutableStateOf(false) }
     var projectMenu by remember { mutableStateOf(false) }
     var labelsDialog by remember { mutableStateOf(false) }
@@ -182,10 +188,17 @@ fun TaskDetailPage(id: String, data: Data) {
                 Dates.dueLabel(task, clock.today, clock.is24Hour)?.let { if (task.time != null) Dates.dayLabel(task.due!!, clock.today) else it } ?: "Due date",
                 if (task.due != null) toneColor(Dates.tone(task, clock.now)) else muted,
                 onClick = { dueMenu = true },
-                onClear = if (task.due != null) ({ update { it.copy(due = null, time = null, repeat = Repeat.NONE) } }) else null,
+                onClear = if (task.due != null) ({ update { it.copy(due = null, time = null, repeat = Repeat.NONE, repeatStart = null, repeatEnd = null) } }) else null,
             ) {
                 DueMenu(dueMenu, { dueMenu = false }, clock.today, Dates.weekStart(data.settings), onPick = { d ->
-                    update { if (d == null) it.copy(due = null, time = null, repeat = Repeat.NONE) else it.copy(due = d) }
+                    update {
+                        when {
+                            d == null -> it.copy(due = null, time = null, repeat = Repeat.NONE, repeatStart = null, repeatEnd = null)
+                            // Moving a repeating task before its start moves the start with it.
+                            it.repeatStart != null && d.isBefore(it.repeatStart) -> it.copy(due = d, repeatStart = d)
+                            else -> it.copy(due = d)
+                        }
+                    }
                 }, onPickDate = { pickingDate = true })
             }
             if (task.due != null) {
@@ -202,7 +215,27 @@ fun TaskDetailPage(id: String, data: Data) {
                     if (task.repeat != Repeat.NONE) MaterialTheme.colorScheme.onSurface else muted,
                     onClick = { repeatMenu = true },
                 ) {
-                    RepeatMenu(repeatMenu, task.repeat, { repeatMenu = false }) { r -> update { it.copy(repeat = r) } }
+                    RepeatMenu(repeatMenu, task.repeat, { repeatMenu = false }) { r ->
+                        update {
+                            if (r == Repeat.NONE) it.copy(repeat = r, repeatStart = null, repeatEnd = null)
+                            else it.copy(repeat = r, repeatStart = it.repeatStart ?: it.due)
+                        }
+                    }
+                }
+                if (task.repeat != Repeat.NONE) {
+                    DetailRow(
+                        Icons.Rounded.PlayArrow,
+                        task.repeatStart?.let { "Starts " + Dates.dayLabel(it, clock.today) } ?: "Start date",
+                        if (task.repeatStart != null) MaterialTheme.colorScheme.onSurface else muted,
+                        onClick = { pickingStart = true },
+                    )
+                    DetailRow(
+                        Icons.Rounded.EventBusy,
+                        task.repeatEnd?.let { "Ends " + Dates.dayLabel(it, clock.today) } ?: "End date (repeats forever)",
+                        if (task.repeatEnd != null) MaterialTheme.colorScheme.onSurface else muted,
+                        onClick = { pickingEnd = true },
+                        onClear = if (task.repeatEnd != null) ({ update { it.copy(repeatEnd = null) } }) else null,
+                    )
                 }
                 if (task.time != null) {
                     Row(
@@ -214,6 +247,13 @@ fun TaskDetailPage(id: String, data: Data) {
                         Switch(checked = task.reminder, onCheckedChange = { on -> update { it.copy(reminder = on) } })
                     }
                 }
+            }
+            Dates.weekLabel(task)?.let { week ->
+                WeekNote(
+                    week,
+                    if (task.seriesId != null) "Completed in this week of a repeating task"
+                    else listOfNotNull("This one falls in this week of the run", Dates.runLabel(task, clock.today)).joinToString(" · "),
+                )
             }
             DetailRow(
                 Icons.Rounded.Flag,
@@ -271,6 +311,26 @@ fun TaskDetailPage(id: String, data: Data) {
     if (pickingTime) {
         TimePickDialog(task.time ?: defaultTime(task.due, clock.now), clock.is24Hour, onPick = { t -> update { it.copy(time = t) } }, onDismiss = { pickingTime = false })
     }
+    if (pickingStart) {
+        DatePickDialog(task.repeatStart ?: task.due, onPick = { d ->
+            update { t ->
+                val due = t.due
+                t.copy(
+                    repeatStart = d,
+                    // The task can't come round before its run starts.
+                    due = if (due == null || due.isBefore(d)) d else due,
+                    repeatEnd = t.repeatEnd?.takeIf { !it.isBefore(d) },
+                )
+            }
+        }, onDismiss = { pickingStart = false })
+    }
+    if (pickingEnd) {
+        DatePickDialog(task.repeatEnd ?: (task.repeatStart ?: task.due ?: clock.today).plusWeeks(4).minusDays(1), onPick = { d ->
+            val start = task.repeatStart ?: task.due
+            if (start != null && d.isBefore(start)) actions.message("The end date can't be before the start")
+            else update { it.copy(repeatEnd = d, repeatStart = it.repeatStart ?: it.due) }
+        }, onDismiss = { pickingEnd = false })
+    }
     if (labelsDialog) LabelsDialog(data.labels, task.labels, onDone = { l -> update { it.copy(labels = l) } }, onDismiss = { labelsDialog = false })
 }
 
@@ -302,5 +362,26 @@ private fun DetailRow(
             }
         }
         menu()
+    }
+}
+
+/** A highlighted line saying which week of a repeating task's run this is: "Week 2 of 6". */
+@Composable
+private fun WeekNote(week: String, detail: String) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .semantics { contentDescription = week }
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.DateRange, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+        Column(Modifier.padding(start = 12.dp)) {
+            Text(week, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+        }
     }
 }

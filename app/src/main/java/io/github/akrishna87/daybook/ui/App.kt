@@ -88,7 +88,7 @@ sealed interface Page {
     data class LabelPage(val name: String) : Page
     data class TaskPage(val id: String) : Page
     /** An existing note, or a new one ([draft]) that's saved once it has something in it. */
-    data class NotePage(val id: String, val draft: Note? = null) : Page
+    data class NotePage(val id: String, val draft: Note? = null, /** Start recording a voice note as it opens. */ val record: Boolean = false) : Page
     data object Completed : Page
     data object Trash : Page
     data object SettingsPage : Page
@@ -131,9 +131,17 @@ class TaskActions(private val scope: CoroutineScope, private val snackbar: Snack
 
     fun complete(task: Task) {
         val before = Store.taskFamily(task.id)
-        val next = Store.completeTask(task.id)
-        val message = if (next != null) "Completed. Next: ${Dates.dayLabel(next, LocalDate.now())}" else "Completed"
-        offerUndo(message) { Store.restoreTasks(before) }
+        val done = Store.completeTask(task.id)
+        val next = done.next
+        val message = when {
+            next != null -> "Completed. Next: ${Dates.dayLabel(next, LocalDate.now())}"
+            done.seriesEnded -> "Completed. That was the last one"
+            else -> "Completed"
+        }
+        offerUndo(message) {
+            Store.restoreTasks(before)
+            done.historyId?.let { Store.deleteTask(it) }
+        }
     }
 
     fun delete(task: Task) {

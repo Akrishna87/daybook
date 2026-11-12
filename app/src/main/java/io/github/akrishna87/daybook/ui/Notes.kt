@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.TaskAlt
@@ -84,6 +85,13 @@ fun NotesScreen(data: Data, padding: PaddingValues) {
             if (shown.size == 1) "1 note" else "${shown.size} notes",
         ) {
             SearchAction { nav.push(Page.Search) }
+            IconButton(
+                onClick = {
+                    val note = NotesContext.newNote(Store.data.value)
+                    nav.push(Page.NotePage(note.id, note, record = true))
+                },
+                Modifier.semantics { contentDescription = "New voice note" },
+            ) { Icon(Icons.Rounded.Mic, null) }
             Box {
                 IconButton(onClick = { sortMenu = true }, Modifier.semantics { contentDescription = "Notes options" }) { Icon(Icons.Rounded.MoreVert, null) }
                 DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
@@ -264,6 +272,17 @@ fun NoteRow(note: Note, data: Data, showNotebook: Boolean, today: java.time.Loca
                         Icon(Icons.Rounded.CheckBox, null, Modifier.size(13.dp), tint = muted)
                         Spacer(Modifier.width(3.dp))
                         Text("${checklist.first}/${checklist.second}", style = MaterialTheme.typography.labelMedium, color = muted)
+                    }
+                }
+                if (note.recordings.isNotEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics { contentDescription = "${note.recordings.size} voice notes" }) {
+                        Icon(Icons.Rounded.Mic, null, Modifier.size(13.dp), tint = muted)
+                        Spacer(Modifier.width(3.dp))
+                        Text(
+                            if (note.recordings.size == 1) io.github.akrishna87.daybook.Voice.duration(note.recordings[0].durationMs) else "${note.recordings.size}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = muted,
+                        )
                     }
                 }
                 if (tasks.isNotEmpty()) {

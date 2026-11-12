@@ -1,5 +1,24 @@
 package io.github.akrishna87.daybook.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.core.content.ContextCompat
+import io.github.akrishna87.daybook.Voice
+import io.github.akrishna87.daybook.VoicePlayer
+import io.github.akrishna87.daybook.VoiceRecorder
+import io.github.akrishna87.daybook.model.Recording
 import android.content.Intent
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -98,13 +117,35 @@ fun NoteEditorPage(page: Page.NotePage, data: Data) {
     var notebookId by remember(id) { mutableStateOf(start.notebookId) }
     var tags by remember(id) { mutableStateOf(start.tags) }
     var pinned by remember(id) { mutableStateOf(start.pinned) }
-    var editing by remember(id) { mutableStateOf(start.isBlank) }
+    // A new voice note opens ready to record rather than with the keyboard up.
+    var editing by remember(id) { mutableStateOf(start.isBlank && !page.record) }
     var menu by remember { mutableStateOf(false) }
     var notebookMenu by remember { mutableStateOf(false) }
     var tagDialog by remember { mutableStateOf(false) }
     var trashing by remember { mutableStateOf(false) }
     val bodyFocus = remember { FocusRequester() }
     val titleFocus = remember { FocusRequester() }
+
+    // Voice notes: one recorder and one player for the page.
+    val recorder = remember { VoiceRecorder(context) }
+    val player = remember { VoicePlayer(context) }
+    var recording by remember { mutableStateOf(false) }
+    var elapsed by remember { mutableLongStateOf(0L) }
+    var playingId by remember { mutableStateOf<String?>(null) }
+    var playPos by remember { mutableLongStateOf(0L) }
+    var deletingClip by remember { mutableStateOf<Recording?>(null) }
+    fun startRecording() {
+        player.stop()
+        playingId = null
+        if (recorder.start()) recording = true else actions.message("Couldn't start recording")
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startRecording() else actions.message("Daybook needs the microphone to record voice notes")
+    }
+    fun record() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording()
+        else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
 
     fun save() {
         val base = Store.data.value.note(id) ?: page.draft ?: return
@@ -116,9 +157,47 @@ fun NoteEditorPage(page: Page.NotePage, data: Data) {
         delay(700)
         save()
     }
-    DisposableEffect(id) { onDispose { save() } }
+    fun stopRecording() {
+        if (!recording) return
+        recording = false
+        val clip = recorder.stop()
+        if (clip == null) {
+            actions.message("Nothing was recorded")
+            return
+        }
+        // Keep whatever's been typed, then add the clip (this saves a new note too).
+        save()
+        val base = Store.data.value.note(id) ?: page.draft?.copy(title = title.text.trim(), body = body.text.trimEnd(), notebookId = notebookId, tags = tags, pinned = pinned)
+        if (base != null) Store.addRecording(base, clip)
+    }
+    DisposableEffect(id) {
+        onDispose {
+            // Leaving the note while recording keeps the recording.
+            stopRecording()
+            player.stop()
+            save()
+        }
+    }
+    LaunchedEffect(recording) {
+        while (recording) {
+            elapsed = recorder.elapsedMs()
+            delay(250)
+        }
+        elapsed = 0L
+    }
+    LaunchedEffect(playingId) {
+        while (playingId != null) {
+            playPos = player.positionMs()
+            delay(250)
+        }
+        playPos = 0L
+    }
     LaunchedEffect(id) {
-        if (start.isBlank) runCatching { titleFocus.requestFocus() }
+        // "New voice note" starts recording once, not every time the note comes back on screen.
+        if (page.record && AutoRecorded.add(id)) record()
+    }
+    LaunchedEffect(id) {
+        if (start.isBlank && !page.record) runCatching { titleFocus.requestFocus() }
     }
 
     val note = data.note(id)
@@ -130,6 +209,12 @@ fun NoteEditorPage(page: Page.NotePage, data: Data) {
                 IconButton(onClick = { editing = false; save() }, Modifier.semantics { contentDescription = "Done editing" }) { Icon(Icons.Rounded.Check, null) }
             } else {
                 IconButton(onClick = { editing = true }, Modifier.semantics { contentDescription = "Edit note" }) { Icon(Icons.Rounded.Edit, null) }
+            }
+            IconButton(
+                onClick = { if (recording) stopRecording() else record() },
+                Modifier.semantics { contentDescription = if (recording) "Stop recording" else "Record voice note" },
+            ) {
+                Icon(if (recording) Icons.Rounded.Stop else Icons.Rounded.Mic, null, tint = if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
             }
             IconButton(onClick = { pinned = !pinned }, Modifier.semantics { contentDescription = if (pinned) "Unpin note" else "Pin note" }) {
                 Icon(if (pinned) Icons.Rounded.PushPin else Icons.Outlined.PushPin, null, tint = if (pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
@@ -205,6 +290,30 @@ fun NoteEditorPage(page: Page.NotePage, data: Data) {
                 )
             }
 
+            // Voice notes recorded into this note.
+            val clips = note?.recordings.orEmpty()
+            if (clips.isNotEmpty()) {
+                Column(Modifier.padding(top = 24.dp)) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Text("Voice notes  ${clips.size}", Modifier.padding(top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.titleSmall)
+                    clips.forEachIndexed { i, clip ->
+                        VoiceClipRow(
+                            index = i + 1,
+                            clip = clip,
+                            playing = playingId == clip.id,
+                            positionMs = if (playingId == clip.id) playPos else 0L,
+                            today = clock.today,
+                            onPlay = {
+                                if (recording) return@VoiceClipRow
+                                if (!player.toggle(clip) { playingId = null }) actions.message("Couldn't play that voice note")
+                                playingId = player.playingId
+                            },
+                            onDelete = { deletingClip = clip },
+                        )
+                    }
+                }
+            }
+
             // Tasks from this note: the Todoist half.
             Column(Modifier.padding(top = 24.dp, bottom = 24.dp)) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -231,9 +340,19 @@ fun NoteEditorPage(page: Page.NotePage, data: Data) {
             }
         }
 
+        if (recording) {
+            RecordingBar(elapsed, onCancel = { recording = false; recorder.cancel() }, onStop = { stopRecording() })
+        }
         if (editing) {
             FormatBar(
                 Modifier.navigationBarsPadding().imePadding(),
+                onDictate = { said ->
+                    val c = body.selection.end.coerceIn(0, body.text.length)
+                    val before = body.text.substring(0, c)
+                    val insert = (if (before.isNotEmpty() && !before.last().isWhitespace()) " " else "") + said
+                    body = TextFieldValue(before + insert + body.text.substring(c), TextRange(c + insert.length))
+                    runCatching { bodyFocus.requestFocus() }
+                },
                 onPrefix = { prefix ->
                     val (text, cursor) = Markdown.toggleLinePrefix(body.text, body.selection.start, prefix)
                     body = TextFieldValue(text, TextRange(cursor))
@@ -258,6 +377,18 @@ fun NoteEditorPage(page: Page.NotePage, data: Data) {
 
     if (tagDialog) {
         TagsDialog(data.tags, tags, onDone = { tags = it }, onDismiss = { tagDialog = false })
+    }
+    deletingClip?.let { clip ->
+        ConfirmDialog(
+            "Delete voice note?",
+            "This recording is deleted for good.",
+            "Delete",
+            onConfirm = {
+                if (playingId == clip.id) { player.stop(); playingId = null }
+                Store.deleteRecording(id, clip.id)
+            },
+            onDismiss = { deletingClip = null },
+        )
     }
     if (trashing) {
         ConfirmDialog(
@@ -354,9 +485,10 @@ fun MarkdownView(body: String, onToggle: (Int) -> Unit, onEdit: () -> Unit) {
 }
 
 @Composable
-private fun FormatBar(modifier: Modifier, onPrefix: (String) -> Unit, onWrap: (String) -> Unit, onDivider: () -> Unit) {
+private fun FormatBar(modifier: Modifier, onDictate: (String) -> Unit, onPrefix: (String) -> Unit, onWrap: (String) -> Unit, onDivider: () -> Unit) {
     Surface(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainer) {
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp)) {
+            MicButton("Dictate", "Speak to type into the note", onText = onDictate)
             FormatButton(Icons.Rounded.CheckBox, "Checklist") { onPrefix("[ ] ") }
             FormatButton(Icons.Rounded.FormatListBulleted, "Bulleted list") { onPrefix("- ") }
             FormatButton(Icons.Rounded.FormatListNumbered, "Numbered list") { onPrefix("1. ") }
@@ -380,3 +512,63 @@ private fun TagsDialog(all: List<String>, selected: List<String>, onDone: (List<
     // Labels and tags behave the same; only the mark differs.
     LabelsDialogFor(mark = "#", title = "Tags", newHint = "New tag", all = all, selected = selected, onDone = onDone, onDismiss = onDismiss)
 }
+
+/** Shown while recording: a red dot, the time so far, and Cancel or Save. */
+@Composable
+private fun RecordingBar(elapsedMs: Long, onCancel: () -> Unit, onStop: () -> Unit) {
+    Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.errorContainer) {
+        Row(Modifier.padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.error))
+            Text(
+                "Recording  ${Voice.duration(elapsedMs)}",
+                Modifier.weight(1f).padding(start = 12.dp).semantics { contentDescription = "Recording" },
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            TextButton(onClick = onCancel) { Text("Cancel", color = MaterialTheme.colorScheme.onErrorContainer) }
+            TextButton(onClick = onStop, Modifier.semantics { contentDescription = "Save recording" }) {
+                Text("Save", color = MaterialTheme.colorScheme.onErrorContainer)
+            }
+        }
+    }
+}
+
+/** One voice note: play or stop, its length, when it was recorded, and delete. */
+@Composable
+private fun VoiceClipRow(
+    index: Int,
+    clip: Recording,
+    playing: Boolean,
+    positionMs: Long,
+    today: java.time.LocalDate,
+    onPlay: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        FilledTonalIconButton(onClick = onPlay, Modifier.semantics { contentDescription = if (playing) "Stop voice note $index" else "Play voice note $index" }) {
+            Icon(if (playing) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, null)
+        }
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text("Voice note $index", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                (if (playing) "${Voice.duration(positionMs)} / " else "") + Voice.duration(clip.durationMs) + " · " + Dates.shortDate(clip.createdAt, today),
+                style = MaterialTheme.typography.bodySmall,
+                color = muted,
+            )
+            if (playing && clip.durationMs > 0) {
+                LinearProgressIndicator(
+                    progress = { (positionMs.toFloat() / clip.durationMs).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(3.dp),
+                    drawStopIndicator = {},
+                )
+            }
+        }
+        IconButton(onClick = onDelete, Modifier.semantics { contentDescription = "Delete voice note $index" }) {
+            Icon(Icons.Rounded.Delete, null, tint = muted)
+        }
+    }
+}
+
+/** Notes opened with "New voice note" that have already started their recording. */
+private val AutoRecorded = mutableSetOf<String>()
