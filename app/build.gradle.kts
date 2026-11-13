@@ -5,7 +5,9 @@ plugins {
 }
 
 // CI passes the run number so every build installs as an update over the last one.
-val buildNumber = (System.getenv("VERSION_CODE") ?: "1").toInt()
+// Builds published from the old Akrishna87/Akrishna87 repo reached version 11, so this
+// repo starts at 100; Android refuses to install a lower version code over a higher one.
+val buildNumber = 100 + (System.getenv("VERSION_CODE") ?: "0").toInt()
 
 android {
     namespace = "io.github.akrishna87.daybook"
