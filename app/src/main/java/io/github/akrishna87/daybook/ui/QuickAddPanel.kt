@@ -237,18 +237,6 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
                             QuickChip(Icons.Rounded.Repeat, if (effRepeat == Repeat.NONE) "Repeat" else effRepeat.label, null) { repeatMenu = true }
                             RepeatMenu(repeatMenu, effRepeat, { repeatMenu = false }) { repeat = it }
                         }
-                        if (effRepeat != Repeat.NONE) {
-                            QuickChip(
-                                Icons.Rounded.PlayArrow,
-                                "Starts " + Dates.dayLabel(effStart ?: today, today),
-                                null,
-                            ) { pickingStart = true }
-                            QuickChip(
-                                Icons.Rounded.EventBusy,
-                                effEnd?.let { "Ends " + Dates.dayLabel(it, today) } ?: "End date",
-                                null,
-                            ) { pickingEnd = true }
-                        }
                     }
                     Box {
                         QuickChip(
@@ -259,6 +247,26 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
                         PriorityMenu(priorityMenu, effPriority, { priorityMenu = false }) { priority = it }
                     }
                     QuickChip(Icons.Rounded.Label, if (effLabels.isEmpty()) "Labels" else effLabels.joinToString(" ") { "@$it" }, null) { labelsDialog = true }
+                }
+
+                // A repeating task's run: when it starts (week 1) and, optionally, when it ends.
+                if (effRepeat != Repeat.NONE) {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        QuickChip(
+                            Icons.Rounded.PlayArrow,
+                            "Starts " + Dates.dayLabel(effStart ?: today, today),
+                            null,
+                        ) { pickingStart = true }
+                        QuickChip(
+                            Icons.Rounded.EventBusy,
+                            effEnd?.let { "Ends " + Dates.dayLabel(it, today) } ?: "End date",
+                            null,
+                        ) { pickingEnd = true }
+                    }
                 }
 
                 HorizontalDivider(Modifier.padding(top = 12.dp, bottom = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)

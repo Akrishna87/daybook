@@ -581,15 +581,17 @@ private fun EntryBlock(e: Entry, data: Data, modifier: Modifier, compact: Boolea
     val color = data.entryColor(e.task)
     val done = e.task.done
     val fg = if (done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+    val bar = if (done) MaterialTheme.colorScheme.outline else color
     Row(
         modifier
             .clip(RoundedCornerShape(5.dp))
             .background(if (done) MaterialTheme.colorScheme.surfaceVariant else color.copy(alpha = if (e.projected) 0.13f else 0.26f))
+            // A bar down the left edge in the project's colour.
+            .drawBehind { drawRect(bar, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }
             .clickable(onClick = onClick)
             .alpha(if (e.projected) 0.85f else 1f),
     ) {
-        Box(Modifier.width(3.dp).fillMaxHeight().background(if (done) MaterialTheme.colorScheme.outline else color))
-        Column(Modifier.padding(horizontal = 3.dp, vertical = 2.dp)) {
+        Column(Modifier.padding(start = 6.dp, end = 3.dp, top = 2.dp, bottom = 2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (e.projected || e.task.repeat != io.github.akrishna87.daybook.model.Repeat.NONE) {
                     Icon(Icons.Rounded.Repeat, "Repeats", Modifier.size(if (compact) 9.dp else 12.dp).padding(end = 1.dp), tint = fg)
