@@ -77,7 +77,9 @@ fun TodayScreen(data: Data, padding: PaddingValues) {
     val today = LocalClock.current.today
     val overdue = Dates.overdue(data.tasks, today)
     val due = Dates.dueOn(data.tasks, today)
+    val completedToday = Dates.completedOn(data.tasks, today).filter { it.parentId == null }.sortedByDescending { it.doneAt }
     val doneToday = Dates.completedOn(data.tasks, today).size
+    var showDone by remember { mutableStateOf(false) }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -123,6 +125,20 @@ fun TodayScreen(data: Data, padding: PaddingValues) {
                 }
             }
         }
+        // What you've finished today, kept in Completed too (Browse → Completed has the full history).
+        if (completedToday.isNotEmpty()) {
+            item(key = "done-today") {
+                SectionHeader("Completed today · ${completedToday.size}", color = extra.complete) {
+                    TextButton(onClick = { showDone = !showDone }) { Text(if (showDone) "Hide" else "Show") }
+                    TextButton(onClick = { nav.push(Page.Completed) }) { Text("All completed") }
+                }
+            }
+            if (showDone) {
+                items(completedToday, key = { "done-" + it.id }) { t ->
+                    TaskRow(t, data, Modifier.animateItem(), showDue = false) { nav.push(Page.TaskPage(t.id)) }
+                }
+            }
+        }
     }
 }
 
@@ -151,6 +167,11 @@ private sealed interface UpRow {
         override val key = "day-$day"
     }
 
+    /** "Week 1 · This week · 9–15 Nov", counted from the current week. */
+    data class Week(val start: LocalDate) : UpRow {
+        override val key = "week-$start"
+    }
+
     data class Item(val task: Task) : UpRow {
         override val key = "task-${task.id}"
     }
@@ -176,9 +197,15 @@ fun UpcomingScreen(data: Data, padding: PaddingValues) {
             add(UpRow.Overdue)
             overdue.forEach { add(UpRow.Item(it)) }
         }
+        var lastWeek: LocalDate? = null
         for (k in 0 until 28) {
             val d = weekStart.plusDays(k.toLong())
             if (d.isBefore(today)) continue
+            val wk = Dates.startOfWeek(d, ws)
+            if (wk != lastWeek) {
+                add(UpRow.Week(wk))
+                lastWeek = wk
+            }
             add(UpRow.Day(d))
             Dates.dueOn(data.tasks, d).forEach { add(UpRow.Item(it)) }
         }
@@ -215,6 +242,7 @@ fun UpcomingScreen(data: Data, padding: PaddingValues) {
             items(rows, key = { it.key }) { row ->
                 when (row) {
                     UpRow.Overdue -> SectionHeader("Overdue", color = extra.overdue)
+                    is UpRow.Week -> WeekHeader(Dates.weekHeading(row.start, firstWeek))
                     is UpRow.Day -> DayHeader(row.day, today) { nav.quickAdd = QuickAddDefaults(due = row.day) }
                     is UpRow.Item -> SwipeTask(row.task, Modifier.animateItem()) {
                         val overdueRow = row.task.due?.isBefore(today) == true
@@ -291,6 +319,22 @@ private fun WeekStrip(
             modifier = Modifier.semantics { contentDescription = "Next week" },
         ) { Icon(Icons.Rounded.ChevronRight, null) }
     }
+}
+
+/** A band above each week in Upcoming: "Week 1 · This week · 9–15 Nov". */
+@Composable
+private fun WeekHeader(text: String) {
+    Text(
+        text,
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp)
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onPrimaryContainer,
+    )
 }
 
 @Composable

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.CalendarToday
+import androidx.compose.material.icons.rounded.EventBusy
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Label
 import androidx.compose.material.icons.rounded.Repeat
@@ -100,6 +101,8 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
     var projectId by remember { mutableStateOf(data.task(defaults.parentId)?.projectId ?: defaults.projectId) }
     var labels by remember { mutableStateOf(defaults.labels) }
     var repeat by remember { mutableStateOf(Repeat.NONE) }
+    var repeatEnd by remember { mutableStateOf<LocalDate?>(null) }
+    var pickingEnd by remember { mutableStateOf(false) }
     var added by remember { mutableStateOf<String?>(null) }
 
     var dueMenu by remember { mutableStateOf(false) }
@@ -120,6 +123,8 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
     val effProject = parsed.projectId ?: projectId
     val effLabels = (labels + parsed.labels).distinctBy { it.lowercase() }
     val effRepeat = if (effDue == null) Repeat.NONE else parsed.repeat ?: repeat
+    // A repeating task runs from its date (week 1) to an optional end date.
+    val effEnd = if (effRepeat == Repeat.NONE) null else (parsed.repeatEnd ?: repeatEnd)?.takeIf { effDue == null || !it.isBefore(effDue) }
 
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -143,6 +148,8 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
             due = effDue,
             time = effTime,
             repeat = effRepeat,
+            repeatStart = if (effRepeat != Repeat.NONE) effDue else null,
+            repeatEnd = effEnd,
             parentId = defaults.parentId,
             noteId = defaults.noteId,
         )
@@ -151,6 +158,7 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
         added = t.title
         text = TextFieldValue("")
         description = TextFieldValue("")
+        repeatEnd = null
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -217,6 +225,13 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
                             QuickChip(Icons.Rounded.Repeat, if (effRepeat == Repeat.NONE) "Repeat" else effRepeat.label, null) { repeatMenu = true }
                             RepeatMenu(repeatMenu, effRepeat, { repeatMenu = false }) { repeat = it }
                         }
+                        if (effRepeat != Repeat.NONE) {
+                            QuickChip(
+                                Icons.Rounded.EventBusy,
+                                effEnd?.let { "Ends " + Dates.dayLabel(it, today) } ?: "End date",
+                                null,
+                            ) { pickingEnd = true }
+                        }
                     }
                     Box {
                         QuickChip(
@@ -249,6 +264,11 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
                         ProjectMenu(projectMenu, data.allProjects, effProject, { projectMenu = false }) { projectId = it }
                     }
                     Spacer(Modifier.weight(1f))
+                    // Say the task in the same plain words you'd type: "call mum tomorrow at 6pm".
+                    MicButton("Speak a task", "Say a task, like “call mum tomorrow at 6pm”") { said ->
+                        val joined = if (text.text.isBlank()) said else text.text.trimEnd() + " " + said
+                        text = TextFieldValue(joined, androidx.compose.ui.text.TextRange(joined.length))
+                    }
                     val last = added
                     if (last != null) {
                         Text(
@@ -269,6 +289,9 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
     }
 
     if (pickingDate) DatePickDialog(effDue, onPick = { due = it }, onDismiss = { pickingDate = false })
+    if (pickingEnd) {
+        DatePickDialog(effEnd ?: effDue?.plusWeeks(4)?.minusDays(1), onPick = { repeatEnd = it }, onDismiss = { pickingEnd = false })
+    }
     if (pickingTime) {
         TimePickDialog(effTime ?: Dates.nextHour(LocalDateTime.now().toLocalTime()), clock.is24Hour, onPick = { time = it }, onDismiss = { pickingTime = false })
     }

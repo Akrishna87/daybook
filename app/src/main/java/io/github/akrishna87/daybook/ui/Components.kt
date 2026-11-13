@@ -157,7 +157,8 @@ fun TaskRow(
                     else -> Dates.dueLabel(task, clock.today, clock.is24Hour)
                 }
                 val project = data.project(task.projectId).takeIf { showProject && (task.projectId != INBOX_ID || task.parentId == null) }
-                val hasMeta = due != null || subs.isNotEmpty() || task.labels.isNotEmpty() || task.noteId != null || task.parentId != null ||
+                val week = Dates.weekLabel(task)
+                val hasMeta = week != null || due != null || subs.isNotEmpty() || task.labels.isNotEmpty() || task.noteId != null || task.parentId != null ||
                     (showProject && task.projectId != INBOX_ID)
                 if (hasMeta) {
                     FlowRow(
@@ -170,6 +171,7 @@ fun TaskRow(
                             Meta(Icons.Rounded.CalendarToday, due, c)
                             if (task.repeat != Repeat.NONE) Icon(Icons.Rounded.Repeat, task.repeat.label, Modifier.size(14.dp).align(Alignment.CenterVertically), tint = c)
                         }
+                        if (week != null) WeekTag(week)
                         if (subs.isNotEmpty()) Meta(Icons.Rounded.SubdirectoryArrowRight, "${subs.count { it.done }}/${subs.size}", muted)
                         if (task.noteId != null) {
                             Icon(Icons.Rounded.Description, "Linked note", Modifier.size(14.dp).align(Alignment.CenterVertically), tint = muted)
@@ -188,6 +190,20 @@ fun TaskRow(
         }
         HorizontalDivider(Modifier.padding(start = 48.dp), color = MaterialTheme.colorScheme.outlineVariant)
     }
+}
+
+/** "Week 2 of 6" on a repeating task with a start date. */
+@Composable
+fun WeekTag(week: String) {
+    Text(
+        week,
+        Modifier
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onPrimaryContainer,
+    )
 }
 
 @Composable

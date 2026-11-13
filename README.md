@@ -33,20 +33,29 @@ the same date and time.)
   | `#Work` | an existing project |
   | `@errands` | labels (new ones are made as you go) |
   | `every day`, `every weekday`, `every monday`, `weekly`, `every month`, `yearly` | repeating tasks |
+  | `for 6 weeks`, `for 10 days`, `for 3 months`, `until dec 31` | when a repeating task ends |
 
-  For example: `Pay rent friday 9am p1 #Home @bills every month`. The chips under the
-  text set the same things by hand, and the panel stays open for the next task.
+  For example: `Pay rent friday 9am p1 #Home @bills every month`, or
+  `Gym every monday for 6 weeks`. The chips under the text set the same things by hand
+  (including an **End date** for repeating tasks), and the panel stays open for the next
+  task. Tap the **microphone** to say the task instead of typing it.
 - **Today** shows overdue tasks (with **Reschedule** to move them all to today), then
   today's tasks, and a progress bar for the day.
 - **Upcoming** lists the next four weeks day by day, with a week strip to jump around and
-  a **+** on each day.
+  a **+** on each day. Each week has a heading: **Week 1 · This week**, **Week 2 · Next
+  week**, **Week 3**, and so on.
 - **Inbox and projects**: tasks without a project go to the Inbox. Make projects with a
   colour in **Browse**. **Labels** collect tasks across projects.
 - **Task details**: tap a task to change its title, description, date, time, repeat,
   priority, project and labels, switch its reminder on or off, and add **sub-tasks**.
+- **Repeating tasks with a start and end date**: in a repeating task's details, set when
+  it **Starts** and **Ends**. The task then shows which week of the run it's in, like
+  **Week 2 of 6**, and stops coming round after the end date.
 - **Swipe** a task right to complete it or left to delete it, with **Undo** either way.
-  Completing a repeating task moves it to its next date. **Completed** in Browse keeps a
-  history you can bring tasks back from.
+  Every completed task is saved under **Completed** (in Browse, and **Completed today** at
+  the bottom of Today). Completing a repeating task saves that occurrence, with its week, in
+  Completed and moves the task to its next date; completing the last one before its end
+  date finishes it for good.
 - **Reminders** notify you at a task's time, with a **Complete** button on the
   notification. Android asks for notification permission the first time you add a task
   with a time.
@@ -59,6 +68,10 @@ the same date and time.)
   toolbar for **checklists**, bulleted and numbered lists, headings, bold, italic,
   strikethrough and dividers. Lists carry on when you press enter, and pressing enter on
   an empty item ends the list. Notes save as you type.
+- **Voice notes**: tap the microphone at the top of a note to record, then **Save**.
+  Recordings are listed in the note to play back or delete, and the mic on the Notes tab
+  starts a new voice note straight away. While editing, the mic in the toolbar types what
+  you say into the note. Recordings stay on the phone and aren't part of backups.
 - **Checklists** tick off right in the note, and the list shows progress like `2/5`.
 - **Tasks from notes**: at the bottom of every note, **Add task** makes a task linked to
   the note. The task shows a note icon and opens the note from its details.
@@ -68,7 +81,8 @@ the same date and time.)
 ## Everything else
 
 - **Search** (the magnifier on any tab) finds tasks by title, description or label, and
-  notes by title, text or tag.
+  notes by title, text or tag. Tap the microphone to search by voice. (Speaking into
+  search, Quick Add and notes uses the phone's speech recogniser, such as the Google app.)
 - **Light and dark themes**, following the phone or chosen in Settings.
 - **Backup**: Settings → Export backup saves everything to a JSON file, and Restore from
   backup reads one back.
@@ -80,15 +94,20 @@ the same date and time.)
 Kotlin and Jetpack Compose with Material 3, and no libraries beyond AndroidX.
 
 - `model/` holds the data and the logic, all plain Kotlin with unit tests:
-  `QuickAdd.kt` reads plain-word tasks, `Dates.kt` handles due dates, repeats and task
-  order, and `Markdown.kt` parses notes and powers the editing toolbar.
+  `QuickAdd.kt` reads plain-word tasks, `Dates.kt` handles due dates, repeats (with start
+  and end dates and week numbers) and task order, and `Markdown.kt` parses notes and powers
+  the editing toolbar.
+- `Voice.kt` records and plays voice notes and asks the phone's speech recogniser for
+  voice search and dictation.
 - `Store.kt` keeps everything in memory and saves it to one JSON file, `Reminders.kt`
   schedules notifications, and `Backup.kt` exports and restores.
 - `ui/` has the screens. `widget/TodayWidget.kt` is the home screen widget.
 - `ci/smoke-test.sh` runs on an Android emulator for every build. It adds tasks with
   Quick Add, completes one, adds a sub-task and a project, writes a note with a checklist,
-  searches, and switches to the dark theme. Screenshots from that run are attached to
+  searches, records a voice note, completes a repeating task and checks it's in Completed
+  with its week number, and switches to the dark theme. Screenshots from that run are attached to
   each release.
 
 Builds are made by the [Daybook APK workflow](.github/workflows/daybook-apk.yml) on
-every push to this repo.
+every push to this repo. Builds of `main` are published as the latest release; other
+branches keep their APK as a workflow artifact.

@@ -65,6 +65,15 @@ data class Task(
     /** Only meaningful with a [due] date. */
     val time: LocalTime? = null,
     val repeat: Repeat = Repeat.NONE,
+    /** The first day of a repeating task's run, which counts as the start of week 1. */
+    val repeatStart: LocalDate? = null,
+    /** The last day a repeating task can come round; completing it after this finishes the series. */
+    val repeatEnd: LocalDate? = null,
+    /**
+     * Set on a completed copy of one occurrence of a repeating task: the repeating task it came
+     * from. These copies are what Completed lists for repeating tasks.
+     */
+    val seriesId: String? = null,
     /** Notify at the due time (only for tasks with a time). */
     val reminder: Boolean = true,
     /** Set on subtasks: the task they belong to. */
@@ -85,6 +94,9 @@ data class Task(
         .put("due", due?.toString() ?: "")
         .put("time", time?.toString() ?: "")
         .put("repeat", repeat.name)
+        .put("repeatStart", repeatStart?.toString() ?: "")
+        .put("repeatEnd", repeatEnd?.toString() ?: "")
+        .put("seriesId", seriesId ?: "")
         .put("reminder", reminder)
         .put("parentId", parentId ?: "")
         .put("noteId", noteId ?: "")
@@ -103,6 +115,9 @@ data class Task(
             due = o.optString("due").takeIf { it.isNotEmpty() }?.let(LocalDate::parse),
             time = o.optString("time").takeIf { it.isNotEmpty() }?.let(LocalTime::parse),
             repeat = runCatching { Repeat.valueOf(o.optString("repeat")) }.getOrDefault(Repeat.NONE),
+            repeatStart = o.optString("repeatStart").takeIf { it.isNotEmpty() }?.let(LocalDate::parse),
+            repeatEnd = o.optString("repeatEnd").takeIf { it.isNotEmpty() }?.let(LocalDate::parse),
+            seriesId = o.optString("seriesId").ifEmpty { null },
             reminder = o.optBoolean("reminder", true),
             parentId = o.optString("parentId").ifEmpty { null },
             noteId = o.optString("noteId").ifEmpty { null },
@@ -151,6 +166,25 @@ data class Notebook(
     }
 }
 
+/** A voice note recorded inside a note. The audio lives in the app's files, in voice/[file]. */
+data class Recording(
+    val id: String = newId(),
+    val file: String,
+    val durationMs: Long = 0L,
+    val createdAt: Long = System.currentTimeMillis(),
+) {
+    fun toJson(): JSONObject = JSONObject().put("id", id).put("file", file).put("durationMs", durationMs).put("createdAt", createdAt)
+
+    companion object {
+        fun fromJson(o: JSONObject) = Recording(
+            id = o.optString("id").ifEmpty { newId() },
+            file = o.optString("file"),
+            durationMs = o.optLong("durationMs"),
+            createdAt = o.optLong("createdAt"),
+        )
+    }
+}
+
 data class Note(
     val id: String = newId(),
     val title: String = "",
@@ -159,12 +193,14 @@ data class Note(
     val notebookId: String = DEFAULT_NOTEBOOK_ID,
     val tags: List<String> = emptyList(),
     val pinned: Boolean = false,
+    /** Voice notes, oldest first. */
+    val recordings: List<Recording> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = createdAt,
     /** When it was moved to the trash; 0 if it isn't there. */
     val trashedAt: Long = 0L,
 ) {
-    val isBlank: Boolean get() = title.isBlank() && body.isBlank()
+    val isBlank: Boolean get() = title.isBlank() && body.isBlank() && recordings.isEmpty()
     val trashed: Boolean get() = trashedAt != 0L
 
     fun toJson(): JSONObject = JSONObject()
@@ -174,6 +210,7 @@ data class Note(
         .put("notebookId", notebookId)
         .put("tags", JSONArray(tags))
         .put("pinned", pinned)
+        .put("recordings", JSONArray(recordings.map { it.toJson() }))
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
         .put("trashedAt", trashedAt)
@@ -188,6 +225,7 @@ data class Note(
                 notebookId = o.optString("notebookId").ifEmpty { DEFAULT_NOTEBOOK_ID },
                 tags = o.optJSONArray("tags").strings(),
                 pinned = o.optBoolean("pinned"),
+                recordings = o.optJSONArray("recordings").objects().map(Recording::fromJson).filter { it.file.isNotEmpty() },
                 createdAt = created,
                 updatedAt = o.optLong("updatedAt", created),
                 trashedAt = o.optLong("trashedAt"),

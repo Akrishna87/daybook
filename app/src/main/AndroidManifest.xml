@@ -6,6 +6,16 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Voice notes, recorded inside a note and kept on the phone. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Speaking into search, Quick Add and notes goes through the phone's speech recogniser. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+    </queries>
+
     <application
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
