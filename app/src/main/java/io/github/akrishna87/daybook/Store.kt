@@ -56,6 +56,9 @@ object Store {
     /** Replaces everything, for restoring a backup. */
     fun replaceAll(d: Data) = update { d }
 
+    /** Adds a file's tasks, projects, notes and notebooks, keeping everything already here. */
+    fun importKeeping(d: Data) = update { it.mergedWith(d) }
+
     private fun write(d: Data) {
         val f = file ?: return
         val json = d.toJson().toString()

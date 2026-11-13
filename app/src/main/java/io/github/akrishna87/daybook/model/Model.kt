@@ -295,6 +295,31 @@ data class Data(
     /** Every tag used on a note that isn't in the trash, alphabetically. */
     val tags: List<String> get() = notes.filter { !it.trashed }.flatMap { it.tags }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() }
 
+    /**
+     * Adds what [other] has that this doesn't, keeping everything already here, for importing a
+     * file without replacing anything. Items are matched by id, so importing the same file twice
+     * adds nothing the second time. Settings stay as they are.
+     */
+    fun mergedWith(other: Data): Data {
+        val notebookIds = notebooks.map { it.id }.toSet()
+        val projectIds = projects.map { it.id }.toSet()
+        val noteIds = notes.map { it.id }.toSet()
+        val taskIds = tasks.map { it.id }.toSet()
+        return copy(
+            notebooks = notebooks + other.notebooks.filter { it.id !in notebookIds },
+            projects = projects + other.projects.filter { it.id !in projectIds },
+            notes = notes + other.notes.filter { it.id !in noteIds },
+            tasks = tasks + other.tasks.filter { it.id !in taskIds },
+        )
+    }
+
+    /** What [mergedWith] would add from [other]: (tasks, notes). */
+    fun newFrom(other: Data): Pair<Int, Int> {
+        val taskIds = tasks.map { it.id }.toSet()
+        val noteIds = notes.map { it.id }.toSet()
+        return other.tasks.count { it.id !in taskIds } to other.notes.count { it.id !in noteIds }
+    }
+
     fun toJson(): JSONObject = JSONObject()
         .put("version", 2)
         .put("tasks", JSONArray(tasks.map { it.toJson() }))

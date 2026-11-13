@@ -86,6 +86,9 @@ the same date and time.)
 - **Light and dark themes**, following the phone or chosen in Settings.
 - **Backup**: Settings → Export backup saves everything to a JSON file, and Restore from
   backup reads one back.
+- **Import**: Settings → Import tasks and notes adds the tasks, projects, notes and
+  notebooks from a Daybook JSON file (such as a ready-made plan) without touching what you
+  already have. Importing the same file twice doesn't add duplicates.
 - **Home screen widget** ("Daybook: Today"): today's and overdue tasks. Tap a circle to
   complete a task, or + to open Quick Add.
 

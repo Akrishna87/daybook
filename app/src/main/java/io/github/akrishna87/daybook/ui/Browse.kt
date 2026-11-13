@@ -277,6 +277,7 @@ fun SettingsPage(data: Data) {
     val s = data.settings
     var refresh by remember { mutableIntStateOf(0) }
     var restoring by remember { mutableStateOf<Data?>(null) }
+    var importing by remember { mutableStateOf<Data?>(null) }
     val canNotify = remember(refresh) { Reminders.canNotify(context) }
     val canExact = remember(refresh) { Reminders.canScheduleExact(context) }
     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
@@ -287,6 +288,12 @@ fun SettingsPage(data: Data) {
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refresh++ }
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) actions.message(if (Backup.export(context, uri)) "Backup saved" else "Couldn't save the backup")
+    }
+    val merger = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val d = Backup.read(context, uri)
+            if (d == null) actions.message("That file isn't a Daybook file") else importing = d
+        }
     }
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -367,6 +374,13 @@ fun SettingsPage(data: Data) {
             }
             item {
                 ListRow(
+                    "Import tasks and notes",
+                    detail = "Add a file's tasks and notes, keeping everything you have",
+                    onClick = { merger.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+                )
+            }
+            item {
+                ListRow(
                     "Restore from backup",
                     detail = "Replace everything with a backup file",
                     onClick = { importer.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
@@ -380,6 +394,19 @@ fun SettingsPage(data: Data) {
                 ListRow("Daybook", detail = "Version $version · Notes and tasks, on your phone only")
             }
         }
+    }
+    importing?.let { file ->
+        val (newTasks, newNotes) = data.newFrom(file)
+        ConfirmDialog(
+            "Import this file?",
+            "It adds $newTasks tasks and $newNotes notes. Everything already in Daybook stays as it is.",
+            "Import",
+            onConfirm = {
+                Store.importKeeping(file)
+                actions.message("Imported $newTasks tasks and $newNotes notes")
+            },
+            onDismiss = { importing = null },
+        )
     }
     restoring?.let { backup ->
         ConfirmDialog(
