@@ -112,10 +112,21 @@ grep -q 'text="Buy milk"' "$OUT/completed.xml" && fail "the completed task is st
 grep -q 'text="All done for today"' "$OUT/completed.xml" || fail "Today doesn't say it's all done"
 echo "PASS: completing a task"
 
-echo "--- Upcoming and task details"
+echo "--- Upcoming calendar: month, week and day views"
 tap completed "Upcoming" last
-wait_for upcoming 'text="Call dentist"' 10 "tomorrow's task isn't in Upcoming"
-shot 4-upcoming
+wait_for cal-month 'content-desc="Month view"' 10 "Upcoming has no calendar views"
+grep -q 'content-desc="Previous month"' "$OUT/cal-month.xml" || fail "the month view has no month arrows"
+grep -q 'text="Buy milk"' "$OUT/cal-month.xml" || fail "the month view's day list doesn't show today's completed task"
+shot 4a-calendar-month
+tap cal-month "Week view"
+wait_for cal-week 'content-desc="Previous week"' 10 "the week view didn't open"
+shot 4b-calendar-week
+tap cal-week "Day view"
+wait_for cal-day 'content-desc="Next day"' 10 "the day view didn't open"
+tap cal-day "Next day"
+wait_for upcoming 'text="Call dentist"' 10 "tomorrow's 9am task isn't on tomorrow's day view"
+shot 4c-calendar-day
+echo "PASS: calendar views"
 tap upcoming "Call dentist"
 wait_for detail 'content-desc="Task options"' 10 "the task didn't open"
 grep -q 'text="Remind me at the due time"' "$OUT/detail.xml" || fail "the 9am task has no reminder switch"
@@ -172,7 +183,10 @@ dump note-agenda
 tap note-agenda "Checklist"
 sleep 1
 adb shell input text "Review%sbudget"
+# Let the editor take the text in before Enter, so the checklist carries on to the next line.
+sleep 1
 adb shell input keyevent KEYCODE_ENTER
+sleep 1
 adb shell input text "Book%sroom"
 hide_keyboard
 dump note-typed
@@ -236,6 +250,7 @@ sleep 1
 dump repeat-typed
 grep -q 'content-desc="Every day"' "$OUT/repeat-typed.xml" || fail "Quick Add didn't read every day"
 grep -q 'content-desc="Ends ' "$OUT/repeat-typed.xml" || fail "Quick Add didn't read for 3 weeks as an end date"
+grep -q 'content-desc="Starts Today"' "$OUT/repeat-typed.xml" || fail "Quick Add has no start date chip for a repeating task"
 shot 15-repeat-quick-add
 adb shell input keyevent KEYCODE_ENTER
 sleep 1
@@ -249,8 +264,18 @@ dump repeat-done
 grep -q 'text="Completed. Next: Tomorrow"' "$OUT/repeat-done.xml" || fail "completing the repeating task didn't move it to tomorrow"
 grep -q 'Completed today' "$OUT/repeat-done.xml" || fail "Today has no Completed today section"
 tap repeat-done "Upcoming" last
+wait_for repeat-cal 'content-desc="List view"' 10 "Upcoming has no List view"
+try_tap repeat-cal "Go to today" && sleep 1
+dump repeat-cal-2
+tap repeat-cal-2 "List view"
 wait_for repeat-upcoming 'Week 1 · This week' 10 "Upcoming doesn't number its weeks"
 shot 17-upcoming-weeks
+tap repeat-upcoming "Week view"
+wait_for repeat-week 'text="Gym"' 10 "the repeating task isn't on the week view"
+shot 17b-calendar-week-repeating
+tap repeat-week "Month view"
+wait_for repeat-month 'content-desc="Previous month"' 10 "the month view didn't open"
+shot 17c-calendar-month-repeating
 tap repeat-upcoming "Browse" last
 wait_for repeat-browse 'text="Completed"' 10 "Browse has no Completed"
 tap repeat-browse "Completed"
@@ -276,6 +301,10 @@ dump browse-dark
 tap browse-dark "Today" last
 sleep 2
 shot 12-today-dark
+dump today-dark
+tap today-dark "Upcoming" last
+sleep 2
+shot 12b-calendar-dark
 echo "PASS: dark theme"
 
 if adb logcat -d | grep -q "FATAL EXCEPTION"; then

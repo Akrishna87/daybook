@@ -177,19 +177,23 @@ private sealed interface UpRow {
     }
 }
 
-/** The next four weeks day by day, with a week strip to jump around. */
+/** The List view of Upcoming: the next four weeks day by day, with a week strip to jump around. */
 @Composable
-fun UpcomingScreen(data: Data, padding: PaddingValues) {
+fun UpcomingList(data: Data, padding: PaddingValues, selected: LocalDate, onSelect: (LocalDate) -> Unit) {
     val nav = LocalNav.current
     val extra = LocalExtra.current
     val today = LocalClock.current.today
     val ws = Dates.weekStart(data.settings)
     val firstWeek = Dates.startOfWeek(today, ws)
-    var weekStart by remember(ws, today) { mutableStateOf(firstWeek) }
-    var selected by remember(today) { mutableStateOf(today) }
+    val shown = if (selected.isBefore(today)) today else selected
+    var weekStart by remember(ws, today) { mutableStateOf(Dates.startOfWeek(shown, ws)) }
     var scrollTo by remember { mutableStateOf<LocalDate?>(null) }
-    var picking by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    // A day chosen elsewhere (the date picker, or another view) brings its week into the list.
+    LaunchedEffect(shown) {
+        weekStart = Dates.startOfWeek(shown, ws)
+        scrollTo = shown
+    }
 
     val overdue = Dates.overdue(data.tasks, today)
     val rows: List<UpRow> = buildList {
@@ -210,29 +214,21 @@ fun UpcomingScreen(data: Data, padding: PaddingValues) {
             Dates.dueOn(data.tasks, d).forEach { add(UpRow.Item(it)) }
         }
     }
-    fun jump(day: LocalDate) {
-        val d = if (day.isBefore(today)) today else day
-        selected = d
-        weekStart = Dates.startOfWeek(d, ws)
-        scrollTo = d
-    }
     LaunchedEffect(scrollTo, rows.size) {
         val target = scrollTo ?: return@LaunchedEffect
         val i = rows.indexOfFirst { it is UpRow.Day && it.day == target }
-        if (i >= 0) listState.animateScrollToItem(i)
+        // Today starts at the top (with Overdue), and a day that begins a week keeps its week heading in view.
+        val at = when {
+            target == today -> 0
+            i > 0 && rows[i - 1] is UpRow.Week -> i - 1
+            else -> i
+        }
+        if (at >= 0) listState.animateScrollToItem(at)
         scrollTo = null
     }
 
-    Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
-        ScreenHeader(
-            "Upcoming",
-            selected.month.getDisplayName(TextStyle.FULL_STANDALONE, Locale.getDefault()) + " " + selected.year,
-        ) {
-            if (weekStart != firstWeek) TextButton(onClick = { jump(today) }) { Text("Today") }
-            IconButton(onClick = { picking = true }, Modifier.semantics { contentDescription = "Pick a date" }) { Icon(Icons.Rounded.CalendarMonth, null) }
-            SearchAction { nav.push(Page.Search) }
-        }
-        WeekStrip(weekStart, selected, today, data, ws, onWeek = { weekStart = it }, onDay = { jump(it) })
+    Column(Modifier.fillMaxSize()) {
+        WeekStrip(weekStart, shown, today, data, ws, onWeek = { weekStart = it }, onDay = { onSelect(it) })
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         LazyColumn(
             Modifier.weight(1f),
@@ -254,7 +250,6 @@ fun UpcomingScreen(data: Data, padding: PaddingValues) {
             }
         }
     }
-    if (picking) DatePickDialog(selected, onPick = { jump(it) }, onDismiss = { picking = false })
 }
 
 @Composable

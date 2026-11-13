@@ -98,6 +98,8 @@ sealed interface Page {
 /** What a new task starts with, depending on where Quick Add was opened. */
 data class QuickAddDefaults(
     val due: LocalDate? = null,
+    /** A time to start with, as when tapping an hour in the calendar's day or week view. */
+    val time: java.time.LocalTime? = null,
     val projectId: String = INBOX_ID,
     val labels: List<String> = emptyList(),
     val parentId: String? = null,
@@ -108,6 +110,8 @@ class Nav {
     var tab by mutableStateOf(Tab.TODAY)
     val pages = mutableStateListOf<Page>()
     var quickAdd by mutableStateOf<QuickAddDefaults?>(null)
+    /** The day chosen in Upcoming's calendar (null means today). New tasks from there start on it. */
+    var calendarDay by mutableStateOf<LocalDate?>(null)
 
     fun push(page: Page) {
         pages.add(page)
@@ -234,6 +238,7 @@ private fun AppContent(data: Data) {
                             nav.push(Page.NotePage(note.id, note))
                         }
                         Tab.BROWSE -> "Add task" to { nav.quickAdd = QuickAddDefaults() }
+                        Tab.UPCOMING -> "Add task" to { nav.quickAdd = QuickAddDefaults(due = nav.calendarDay ?: LocalDate.now()) }
                         else -> "Add task" to { nav.quickAdd = QuickAddDefaults(due = LocalDate.now()) }
                     }
                     Fab(label, onClick)
