@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.CalendarToday
 import androidx.compose.material.icons.rounded.EventBusy
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Label
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.FilledIconButton
@@ -70,6 +71,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.akrishna87.daybook.Store
+import io.github.akrishna87.daybook.model.Agenda
 import io.github.akrishna87.daybook.model.Data
 import io.github.akrishna87.daybook.model.Dates
 import io.github.akrishna87.daybook.model.Priority
@@ -96,13 +98,16 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
     var text by remember { mutableStateOf(TextFieldValue("")) }
     var description by remember { mutableStateOf(TextFieldValue("")) }
     var due by remember { mutableStateOf(defaults.due) }
-    var time by remember { mutableStateOf<LocalTime?>(null) }
+    var time by remember { mutableStateOf(defaults.time) }
     var priority by remember { mutableIntStateOf(Priority.NONE) }
     var projectId by remember { mutableStateOf(data.task(defaults.parentId)?.projectId ?: defaults.projectId) }
     var labels by remember { mutableStateOf(defaults.labels) }
     var repeat by remember { mutableStateOf(Repeat.NONE) }
     var repeatEnd by remember { mutableStateOf<LocalDate?>(null) }
+    /** The first day of a repeating task's run, when it isn't simply the task's date. */
+    var repeatStart by remember { mutableStateOf<LocalDate?>(null) }
     var pickingEnd by remember { mutableStateOf(false) }
+    var pickingStart by remember { mutableStateOf(false) }
     var added by remember { mutableStateOf<String?>(null) }
 
     var dueMenu by remember { mutableStateOf(false) }
@@ -117,14 +122,20 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
         QuickAdd.parse(text.text, today, LocalTime.now(), data.projects, Dates.weekStart(data.settings))
     }
     // What the text says wins over the chips.
-    val effDue = parsed.due ?: due
+    val chosenDue = parsed.due ?: due
+    val chosenRepeat = if (chosenDue == null) Repeat.NONE else parsed.repeat ?: repeat
+    // A repeating task runs from its start date (week 1, by default its date) to an optional end date.
+    // A start picked by hand can be in the past (to count weeks from it) or later on; the task is
+    // then due the first time it comes round from that start, and not before today.
+    val pickedStart = repeatStart?.takeIf { chosenRepeat != Repeat.NONE }
+    val effDue = pickedStart?.let { Agenda.firstOnOrAfter(it, chosenRepeat, today) } ?: chosenDue
     val effTime = if (effDue == null) null else parsed.time ?: time
     val effPriority = parsed.priority ?: priority
     val effProject = parsed.projectId ?: projectId
     val effLabels = (labels + parsed.labels).distinctBy { it.lowercase() }
-    val effRepeat = if (effDue == null) Repeat.NONE else parsed.repeat ?: repeat
-    // A repeating task runs from its date (week 1) to an optional end date.
-    val effEnd = if (effRepeat == Repeat.NONE) null else (parsed.repeatEnd ?: repeatEnd)?.takeIf { effDue == null || !it.isBefore(effDue) }
+    val effRepeat = chosenRepeat
+    val effStart = if (effRepeat == Repeat.NONE) null else pickedStart ?: effDue
+    val effEnd = if (effRepeat == Repeat.NONE) null else (parsed.repeatEnd ?: repeatEnd)?.takeIf { effStart == null || !it.isBefore(effStart) }
 
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -148,7 +159,7 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
             due = effDue,
             time = effTime,
             repeat = effRepeat,
-            repeatStart = if (effRepeat != Repeat.NONE) effDue else null,
+            repeatStart = effStart,
             repeatEnd = effEnd,
             parentId = defaults.parentId,
             noteId = defaults.noteId,
@@ -159,6 +170,7 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
         text = TextFieldValue("")
         description = TextFieldValue("")
         repeatEnd = null
+        repeatStart = null
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -217,7 +229,7 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
                             Icons.Rounded.CalendarToday, label,
                             if (effDue != null) toneColor(Dates.tone(Task(title = "", due = effDue, time = effTime), clock.now)) else null,
                         ) { dueMenu = true }
-                        DueMenu(dueMenu, { dueMenu = false }, today, Dates.weekStart(data.settings), onPick = { due = it }, onPickDate = { pickingDate = true })
+                        DueMenu(dueMenu, { dueMenu = false }, today, Dates.weekStart(data.settings), onPick = { due = it; repeatStart = null }, onPickDate = { pickingDate = true })
                     }
                     if (effDue != null) {
                         QuickChip(Icons.Rounded.Schedule, effTime?.let { Dates.timeFormatter(clock.is24Hour).format(it) } ?: "Time", null) { pickingTime = true }
@@ -226,6 +238,11 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
                             RepeatMenu(repeatMenu, effRepeat, { repeatMenu = false }) { repeat = it }
                         }
                         if (effRepeat != Repeat.NONE) {
+                            QuickChip(
+                                Icons.Rounded.PlayArrow,
+                                "Starts " + Dates.dayLabel(effStart ?: today, today),
+                                null,
+                            ) { pickingStart = true }
                             QuickChip(
                                 Icons.Rounded.EventBusy,
                                 effEnd?.let { "Ends " + Dates.dayLabel(it, today) } ?: "End date",
@@ -288,9 +305,16 @@ fun QuickAddPanel(defaults: QuickAddDefaults, data: Data, onClose: () -> Unit) {
         }
     }
 
-    if (pickingDate) DatePickDialog(effDue, onPick = { due = it }, onDismiss = { pickingDate = false })
+    if (pickingDate) DatePickDialog(effDue, onPick = { due = it; repeatStart = null }, onDismiss = { pickingDate = false })
     if (pickingEnd) {
-        DatePickDialog(effEnd ?: effDue?.plusWeeks(4)?.minusDays(1), onPick = { repeatEnd = it }, onDismiss = { pickingEnd = false })
+        DatePickDialog(effEnd ?: (effStart ?: effDue)?.plusWeeks(4)?.minusDays(1), onPick = { repeatEnd = it }, onDismiss = { pickingEnd = false })
+    }
+    if (pickingStart) {
+        DatePickDialog(effStart ?: effDue, onPick = { s ->
+            repeatStart = s
+            // Without a date typed in, the task's date follows the start.
+            if (parsed.due == null) due = Agenda.firstOnOrAfter(s, effRepeat, today)
+        }, onDismiss = { pickingStart = false })
     }
     if (pickingTime) {
         TimePickDialog(effTime ?: Dates.nextHour(LocalDateTime.now().toLocalTime()), clock.is24Hour, onPick = { time = it }, onDismiss = { pickingTime = false })

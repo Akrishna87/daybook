@@ -59,6 +59,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.akrishna87.daybook.Store
+import io.github.akrishna87.daybook.model.Agenda
 import io.github.akrishna87.daybook.model.Data
 import io.github.akrishna87.daybook.model.Dates
 import io.github.akrishna87.daybook.model.Priority
@@ -225,7 +226,7 @@ fun TaskDetailPage(id: String, data: Data) {
                 if (task.repeat != Repeat.NONE) {
                     DetailRow(
                         Icons.Rounded.PlayArrow,
-                        task.repeatStart?.let { "Starts " + Dates.dayLabel(it, clock.today) } ?: "Start date",
+                        task.repeatStart?.let { "Starts " + Dates.dayLabel(it, clock.today) + " · tap to change" } ?: "Start date",
                         if (task.repeatStart != null) MaterialTheme.colorScheme.onSurface else muted,
                         onClick = { pickingStart = true },
                     )
@@ -307,18 +308,24 @@ fun TaskDetailPage(id: String, data: Data) {
         }
     }
 
-    if (pickingDate) DatePickDialog(task.due, onPick = { d -> update { it.copy(due = d) } }, onDismiss = { pickingDate = false })
+    if (pickingDate) {
+        DatePickDialog(task.due, onPick = { d ->
+            // Moving a repeating task before its start moves the start with it.
+            update { if (it.repeatStart != null && d.isBefore(it.repeatStart)) it.copy(due = d, repeatStart = d) else it.copy(due = d) }
+        }, onDismiss = { pickingDate = false })
+    }
     if (pickingTime) {
         TimePickDialog(task.time ?: defaultTime(task.due, clock.now), clock.is24Hour, onPick = { t -> update { it.copy(time = t) } }, onDismiss = { pickingTime = false })
     }
     if (pickingStart) {
         DatePickDialog(task.repeatStart ?: task.due, onPick = { d ->
             update { t ->
-                val due = t.due
                 t.copy(
                     repeatStart = d,
-                    // The task can't come round before its run starts.
-                    due = if (due == null || due.isBefore(d)) d else due,
+                    // The task is next due the first time it comes round from its new start: the start
+                    // itself if that's today or later, otherwise the next date in step with it. A start
+                    // in the past keeps the week count going from then.
+                    due = Agenda.firstOnOrAfter(d, t.repeat, clock.today),
                     repeatEnd = t.repeatEnd?.takeIf { !it.isBefore(d) },
                 )
             }

@@ -157,7 +157,8 @@ object Dates {
         return "Week $n · $name$range"
     }
 
-    private fun step(day: LocalDate, repeat: Repeat): LocalDate = when (repeat) {
+    /** One repeat on from [day]. */
+    fun step(day: LocalDate, repeat: Repeat): LocalDate = when (repeat) {
         Repeat.NONE -> day
         Repeat.DAILY -> day.plusDays(1)
         Repeat.WEEKDAYS -> {

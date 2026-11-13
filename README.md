@@ -37,19 +37,33 @@ the same date and time.)
 
   For example: `Pay rent friday 9am p1 #Home @bills every month`, or
   `Gym every monday for 6 weeks`. The chips under the text set the same things by hand
-  (including an **End date** for repeating tasks), and the panel stays open for the next
+  (including a **Starts** and an **End date** chip for repeating tasks), and the panel stays open for the next
   task. Tap the **microphone** to say the task instead of typing it.
 - **Today** shows overdue tasks (with **Reschedule** to move them all to today), then
   today's tasks, and a progress bar for the day.
-- **Upcoming** lists the next four weeks day by day, with a week strip to jump around and
-  a **+** on each day. Each week has a heading: **Week 1 · This week**, **Week 2 · Next
-  week**, **Week 3**, and so on.
+- **Upcoming is a calendar**, with four views at the top (Daybook remembers the one you used last):
+  - **Month**: the whole month, with each day's tasks shown in the grid in their project's
+    colour. Tap a day to see its full list of tasks underneath, tap it again (or **Day view**)
+    to open that day, and long-press a day to add a task on it. Swipe or use the arrows to
+    change month, and tap the month name to jump to any date.
+  - **Week**: seven days side by side, with untimed tasks in an **All day** row and timed tasks
+    placed at their hour. Tap a day's heading to open it.
+  - **Day**: one day hour by hour, with a line at the current time. Swipe for the next or
+    previous day.
+  - **List**: the next four weeks day by day, with a week strip and a **+** on each day, and a
+    heading per week: **Week 1 · This week**, **Week 2 · Next week**, **Week 3**, and so on.
+
+  Repeating tasks show on every day they'll come round, not just their next date, and finished
+  tasks stay on the day they were due, so past days show what you did. In Week and Day, tap an
+  empty hour to add a task at that time; **+** adds one on the day you're looking at.
 - **Inbox and projects**: tasks without a project go to the Inbox. Make projects with a
   colour in **Browse**. **Labels** collect tasks across projects.
 - **Task details**: tap a task to change its title, description, date, time, repeat,
   priority, project and labels, switch its reminder on or off, and add **sub-tasks**.
-- **Repeating tasks with a start and end date**: in a repeating task's details, set when
-  it **Starts** and **Ends**. The task then shows which week of the run it's in, like
+- **Repeating tasks with a start and end date**: in Quick Add or a repeating task's details,
+  set when it **Starts** and **Ends**. The start can be later on (the task is first due then)
+  or in the past (the weeks count from then, and the task is next due on the first date in step
+  with it, so a Monday meeting stays on Mondays). The task then shows which week of the run it's in, like
   **Week 2 of 6**, and stops coming round after the end date.
 - **Swipe** a task right to complete it or left to delete it, with **Undo** either way.
   Every completed task is saved under **Completed** (in Browse, and **Completed today** at
@@ -98,8 +112,9 @@ Kotlin and Jetpack Compose with Material 3, and no libraries beyond AndroidX.
 
 - `model/` holds the data and the logic, all plain Kotlin with unit tests:
   `QuickAdd.kt` reads plain-word tasks, `Dates.kt` handles due dates, repeats (with start
-  and end dates and week numbers) and task order, and `Markdown.kt` parses notes and powers
-  the editing toolbar.
+  and end dates and week numbers) and task order, `Agenda.kt` works out what's on each day of
+  the calendar (including every occurrence of repeating tasks) and lays out the hours, and
+  `Markdown.kt` parses notes and powers the editing toolbar.
 - `Voice.kt` records and plays voice notes and asks the phone's speech recogniser for
   voice search and dictation.
 - `Store.kt` keeps everything in memory and saves it to one JSON file, `Reminders.kt`
@@ -107,7 +122,8 @@ Kotlin and Jetpack Compose with Material 3, and no libraries beyond AndroidX.
 - `ui/` has the screens. `widget/TodayWidget.kt` is the home screen widget.
 - `ci/smoke-test.sh` runs on an Android emulator for every build. It adds tasks with
   Quick Add, completes one, adds a sub-task and a project, writes a note with a checklist,
-  searches, records a voice note, completes a repeating task and checks it's in Completed
+  goes through the calendar's
+  month, week and day views, searches, records a voice note, completes a repeating task and checks it's in Completed
   with its week number, and switches to the dark theme. Screenshots from that run are attached to
   each release.
 

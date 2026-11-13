@@ -245,6 +245,8 @@ data class Settings(
     val noteSort: NoteSort = NoteSort.UPDATED,
     /** Daybook has asked once for permission to post notifications. */
     val askedNotifications: Boolean = false,
+    /** How the Upcoming tab shows its calendar. */
+    val calendarView: CalendarView = CalendarView.MONTH,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("theme", theme.name)
@@ -252,6 +254,7 @@ data class Settings(
         .put("reminders", reminders)
         .put("noteSort", noteSort.name)
         .put("askedNotifications", askedNotifications)
+        .put("calendarView", calendarView.name)
 
     companion object {
         fun fromJson(o: JSONObject?): Settings {
@@ -263,6 +266,7 @@ data class Settings(
                 reminders = o.optBoolean("reminders", d.reminders),
                 noteSort = runCatching { NoteSort.valueOf(o.optString("noteSort")) }.getOrDefault(d.noteSort),
                 askedNotifications = o.optBoolean("askedNotifications", d.askedNotifications),
+                calendarView = runCatching { CalendarView.valueOf(o.optString("calendarView")) }.getOrDefault(d.calendarView),
             )
         }
     }
