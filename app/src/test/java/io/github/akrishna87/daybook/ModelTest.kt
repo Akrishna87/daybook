@@ -83,4 +83,29 @@ class ModelTest {
         assertEquals(3, d.tasks.size)
         assertTrue(d.tasks.all { it.projectId == INBOX_ID && it.due == null })
     }
+
+    @Test
+    fun importingKeepsEverythingAndAddsOnlyWhatIsNew() {
+        val mine = Data(
+            tasks = listOf(Task(id = "t1", title = "Mine")),
+            projects = listOf(Project(id = "p1", name = "Home")),
+            notes = listOf(Note(id = "n1", title = "My note")),
+            settings = Settings(theme = ThemeMode.DARK),
+        )
+        val plan = Data(
+            tasks = listOf(Task(id = "t1", title = "Changed"), Task(id = "t2", title = "Week 1", projectId = "p2")),
+            projects = listOf(Project(id = "p2", name = "FDE")),
+            notes = listOf(Note(id = "n2", title = "Plan", notebookId = "nb2")),
+            notebooks = listOf(Notebook.Default, Notebook(id = "nb2", name = "FDE")),
+        )
+        assertEquals(1 to 1, mine.newFrom(plan))
+        val merged = mine.mergedWith(plan)
+        assertEquals(listOf("Mine", "Week 1"), merged.tasks.map { it.title })
+        assertEquals(listOf("p1", "p2"), merged.projects.map { it.id })
+        assertEquals(listOf("n1", "n2"), merged.notes.map { it.id })
+        assertEquals(listOf(DEFAULT_NOTEBOOK_ID, "nb2"), merged.notebooks.map { it.id })
+        assertEquals(ThemeMode.DARK, merged.settings.theme)
+        // Importing the same file again adds nothing.
+        assertEquals(merged, merged.mergedWith(plan))
+    }
 }
