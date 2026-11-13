@@ -217,7 +217,13 @@ fun UpcomingList(data: Data, padding: PaddingValues, selected: LocalDate, onSele
     LaunchedEffect(scrollTo, rows.size) {
         val target = scrollTo ?: return@LaunchedEffect
         val i = rows.indexOfFirst { it is UpRow.Day && it.day == target }
-        if (i >= 0) listState.animateScrollToItem(i)
+        // Today starts at the top (with Overdue), and a day that begins a week keeps its week heading in view.
+        val at = when {
+            target == today -> 0
+            i > 0 && rows[i - 1] is UpRow.Week -> i - 1
+            else -> i
+        }
+        if (at >= 0) listState.animateScrollToItem(at)
         scrollTo = null
     }
 
