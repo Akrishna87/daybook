@@ -183,7 +183,10 @@ dump note-agenda
 tap note-agenda "Checklist"
 sleep 1
 adb shell input text "Review%sbudget"
+# Let the editor take the text in before Enter, so the checklist carries on to the next line.
+sleep 1
 adb shell input keyevent KEYCODE_ENTER
+sleep 1
 adb shell input text "Book%sroom"
 hide_keyboard
 dump note-typed
